@@ -24,7 +24,7 @@ def load_data():
     else:
         pairings_history = {}
         logging.warning(
-            "pairings_history.json not found. Starting with empty pairings history."
+            "pairings_history.json not found. Starting with an empty pairings history."
         )
 
 
@@ -87,7 +87,7 @@ def update_member_history(
     member_history[member_id] = member_history_entry
 
 
-# Task loop to pair members
+# Function to pair members
 @tasks.loop(hours=168)
 async def pair_members():
     global pairings_history
@@ -119,11 +119,66 @@ async def pair_members():
         if not member.bot and discord.utils.get(member.roles, name="member")
     }
 
+    # Shuffle the list of member IDs to randomize pairing order
+    member_ids = list(current_members.keys())
+    random.shuffle(member_ids)
+
     new_pairings = []
     paired_members = set()
     current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    for member_id in current_members:
+    # Special handling for "StayThePath" if odd number of members
+    if len(member_ids) % 2 != 0:
+        extra_member_id = "273183253207318530"  # ID for "StayThePath"
+
+        first_partner_id = find_best_partner(
+            extra_member_id, current_members, member_history, paired_members
+        )
+        if first_partner_id:
+            new_pairings.append((extra_member_id, first_partner_id))
+            update_member_history(
+                extra_member_id,
+                first_partner_id,
+                current_time,
+                member_history,
+                current_members,
+            )
+            update_member_history(
+                first_partner_id,
+                extra_member_id,
+                current_time,
+                member_history,
+                current_members,
+            )
+            paired_members.update([extra_member_id, first_partner_id])
+
+        # Ensure "StayThePath" is eligible for a second pairing
+        second_partner_id = find_best_partner(
+            extra_member_id,
+            current_members,
+            member_history,
+            paired_members - {first_partner_id},
+        )
+        if second_partner_id:
+            new_pairings.append((extra_member_id, second_partner_id))
+            update_member_history(
+                extra_member_id,
+                second_partner_id,
+                current_time,
+                member_history,
+                current_members,
+            )
+            update_member_history(
+                second_partner_id,
+                extra_member_id,
+                current_time,
+                member_history,
+                current_members,
+            )
+            paired_members.update([second_partner_id])
+
+    # Pair the remaining members
+    for member_id in member_ids:
         if member_id not in paired_members:
             partner_id = find_best_partner(
                 member_id, current_members, member_history, paired_members
@@ -138,6 +193,7 @@ async def pair_members():
                 )
                 paired_members.update([member_id, partner_id])
 
+    # Update and announce pairings
     new_pairings_with_details = []
     for member_id, partner_id in new_pairings:
         member_name = current_members[member_id]
