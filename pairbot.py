@@ -87,9 +87,7 @@ def update_member_history(
     member_history[member_id] = member_history_entry
 
 
-staythepath_previous_partners = {}
-
-
+# Function to pair members
 @tasks.loop(hours=168)
 async def pair_members():
     global pairings_history
@@ -115,7 +113,6 @@ async def pair_members():
         logging.error("Announcement channel not found")
         return
 
-    # Create a dictionary mapping member IDs to names
     current_members = {
         str(member.id): member.display_name
         for member in guild.members
@@ -130,65 +127,62 @@ async def pair_members():
     paired_members = set()
     current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    extra_member_id = "273183253207318530"  # Your ID
-    extra_member_paired = False  # Track if extra_member is paired
-
+    # Special handling for "StayThePath" if odd number of members
     if len(member_ids) % 2 != 0:
-        partner1_id = find_best_partner(
-            extra_member_id, current_members, member_history, paired_members
-        )
-        partner2_id = find_best_partner(
-            extra_member_id, current_members, member_history, paired_members
-        )
-        if partner1_id and partner2_id:
-            new_pairings.append((extra_member_id, partner1_id))
-            new_pairings.append((extra_member_id, partner2_id))
-            update_member_history(
-                extra_member_id,
-                partner1_id,
-                current_time,
-                member_history,
-                current_members,
-            )
-            update_member_history(
-                partner1_id,
-                extra_member_id,
-                current_time,
-                member_history,
-                current_members,
-            )
-            update_member_history(
-                extra_member_id,
-                partner2_id,
-                current_time,
-                member_history,
-                current_members,
-            )
-            update_member_history(
-                partner2_id,
-                extra_member_id,
-                current_time,
-                member_history,
-                current_members,
-            )
-            paired_members.update([extra_member_id, partner1_id, partner2_id])
-            extra_member_paired = True
+        extra_member_id = "273183253207318530"  # ID for "StayThePath"
 
+        first_partner_id = find_best_partner(
+            extra_member_id, current_members, member_history, paired_members
+        )
+        if first_partner_id:
+            new_pairings.append((extra_member_id, first_partner_id))
+            update_member_history(
+                extra_member_id,
+                first_partner_id,
+                current_time,
+                member_history,
+                current_members,
+            )
+            update_member_history(
+                first_partner_id,
+                extra_member_id,
+                current_time,
+                member_history,
+                current_members,
+            )
+            paired_members.update([extra_member_id, first_partner_id])
+
+        # Ensure "StayThePath" is eligible for a second pairing
+        second_partner_id = find_best_partner(
+            extra_member_id,
+            current_members,
+            member_history,
+            paired_members - {first_partner_id},
+        )
+        if second_partner_id:
+            new_pairings.append((extra_member_id, second_partner_id))
+            update_member_history(
+                extra_member_id,
+                second_partner_id,
+                current_time,
+                member_history,
+                current_members,
+            )
+            update_member_history(
+                second_partner_id,
+                extra_member_id,
+                current_time,
+                member_history,
+                current_members,
+            )
+            paired_members.update([second_partner_id])
+
+    # Pair the remaining members
     for member_id in member_ids:
-        if extra_member_paired and member_id == extra_member_id:
-            continue  # Skip StayThePath if already paired
-
         if member_id not in paired_members:
             partner_id = find_best_partner(
                 member_id, current_members, member_history, paired_members
             )
-
-            # Ensure that StayThePath doesn't get matched with the same partner twice in a row
-            if partner_id == extra_member_id:
-                partner_id = find_best_partner(
-                    member_id, current_members, member_history, paired_members
-                )
-
             if partner_id:
                 new_pairings.append((member_id, partner_id))
                 update_member_history(
@@ -219,9 +213,6 @@ async def pair_members():
         file.truncate()
 
     logging.info("Completed pairings.")
-
-
-# Other bot commands remain the same
 
 
 # Command to trigger pairing manually
