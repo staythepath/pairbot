@@ -4,7 +4,7 @@ import random
 import logging
 import os
 from discord.ext import commands, tasks
-from datetime import datetime
+from datetime import datetime, timedelta
 
 # Set up logging
 logging.basicConfig(level=logging.DEBUG)
@@ -49,6 +49,44 @@ async def on_ready():
     load_data()
 
 
+# Function to find the best partner for a member
+def find_best_partner(member_id, current_members, member_history, paired_members):
+    potential_partners = [
+        m for m in current_members if m != member_id and m not in paired_members
+    ]
+    least_recently_paired = None
+    longest_time = timedelta.min
+
+    for partner_id in potential_partners:
+        last_paired_time = datetime.min
+        for pairing_time in member_history.get(partner_id, {}):
+            if pairing_time != "name":
+                pairing_time_obj = datetime.strptime(pairing_time, "%Y-%m-%d %H:%M:%S")
+                if (
+                    member_history[partner_id][pairing_time] == member_id
+                    and pairing_time_obj > last_paired_time
+                ):
+                    last_paired_time = pairing_time_obj
+
+        time_since_last_paired = datetime.now() - last_paired_time
+        if time_since_last_paired > longest_time:
+            longest_time = time_since_last_paired
+            least_recently_paired = partner_id
+
+    return least_recently_paired
+
+
+# Function to update member history
+def update_member_history(
+    member_id, partner_id, current_time, member_history, current_members
+):
+    member_history_entry = member_history.get(
+        member_id, {"name": current_members[member_id]}
+    )
+    member_history_entry[current_time] = partner_id
+    member_history[member_id] = member_history_entry
+
+
 # Task loop to pair members
 @tasks.loop(hours=168)
 async def pair_members():
@@ -87,47 +125,36 @@ async def pair_members():
 
     for member_id in current_members:
         if member_id not in paired_members:
-            potential_partners = [
-                m for m in current_members if m != member_id and m not in paired_members
-            ]
-            if potential_partners:
-                partner_id = random.choice(potential_partners)
+            partner_id = find_best_partner(
+                member_id, current_members, member_history, paired_members
+            )
+            if partner_id:
                 new_pairings.append((member_id, partner_id))
-
-                # Update member history
-                member_history_entry = member_history.get(
-                    member_id, {"name": current_members[member_id]}
+                update_member_history(
+                    member_id, partner_id, current_time, member_history, current_members
                 )
-                member_history_entry[current_time] = partner_id
-                member_history[member_id] = member_history_entry
-
-                partner_history_entry = member_history.get(
-                    partner_id, {"name": current_members[partner_id]}
+                update_member_history(
+                    partner_id, member_id, current_time, member_history, current_members
                 )
-                partner_history_entry[current_time] = member_id
-                member_history[partner_id] = partner_history_entry
-
                 paired_members.update([member_id, partner_id])
-
-    # Write the updated member history back to the file
-    with open("pairings_history.json", "r+") as file:
-        data["members"] = member_history
-        file.seek(0)
-        json.dump(data, file, indent=4)
-        file.truncate()
 
     new_pairings_with_details = []
     for member_id, partner_id in new_pairings:
-        announcement = f"{current_members[member_id]} is paired with {current_members[partner_id]} this week!"
+        member_name = current_members[member_id]
+        partner_name = current_members[partner_id]
+        announcement = f"{member_name} is paired with {partner_name} this week!"
         await announcement_channel.send(announcement)
-        new_pairings_with_details.append(
-            [
-                f"{member_id} ({current_members[member_id]})",
-                f"{partner_id} ({current_members[partner_id]})",
-            ]
-        )
+        new_pairings_with_details.append({member_name: partner_name})
 
     pairings_history[current_time] = new_pairings_with_details
+
+    # Write the updated member and pairings history back to the file
+    with open("pairings_history.json", "r+") as file:
+        data["members"] = member_history
+        data["pairings"] = pairings_history
+        file.seek(0)
+        json.dump(data, file, indent=4)
+        file.truncate()
 
     logging.info("Completed pairings.")
 
@@ -147,4 +174,4 @@ async def test_command(ctx):
 
 
 # Run the bot
-bot.run("MTE5OTQ3NzUxNTQwMDUxMTU5MA.G_2Q3r.VCeCBY_Ofzb_kZTpME2HITuRqOdQzTFa_HzUF8")
+bot.run("MTE5OTQ3NzUxNTQwMDUxMTU5MA.GiQ-UT.GawaXgX4jXfJEmL3_SCuetLdtB940XKaeRoTOQ")
