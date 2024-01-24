@@ -174,4 +174,4 @@ async def test_command(ctx):
 
 
 # Run the bot
-bot.run("MTE5OTQ3NzUxNTQwMDUxMTU5MA.GiQ-UT.GawaXgX4jXfJEmL3_SCuetLdtB940XKaeRoTOQ")
+bot.run("")
