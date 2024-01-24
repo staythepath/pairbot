@@ -24,7 +24,7 @@ def load_data():
     else:
         pairings_history = {}
         logging.warning(
-            "pairings_history.json not found. Starting with empty pairings history."
+            "pairings_history.json not found. Starting with an empty pairings history."
         )
 
 
@@ -87,7 +87,9 @@ def update_member_history(
     member_history[member_id] = member_history_entry
 
 
-# Task loop to pair members
+staythepath_previous_partners = {}
+
+
 @tasks.loop(hours=168)
 async def pair_members():
     global pairings_history
@@ -113,21 +115,80 @@ async def pair_members():
         logging.error("Announcement channel not found")
         return
 
+    # Create a dictionary mapping member IDs to names
     current_members = {
         str(member.id): member.display_name
         for member in guild.members
         if not member.bot and discord.utils.get(member.roles, name="member")
     }
 
+    # Shuffle the list of member IDs to randomize pairing order
+    member_ids = list(current_members.keys())
+    random.shuffle(member_ids)
+
     new_pairings = []
     paired_members = set()
     current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    for member_id in current_members:
+    extra_member_id = "273183253207318530"  # Your ID
+    extra_member_paired = False  # Track if extra_member is paired
+
+    if len(member_ids) % 2 != 0:
+        partner1_id = find_best_partner(
+            extra_member_id, current_members, member_history, paired_members
+        )
+        partner2_id = find_best_partner(
+            extra_member_id, current_members, member_history, paired_members
+        )
+        if partner1_id and partner2_id:
+            new_pairings.append((extra_member_id, partner1_id))
+            new_pairings.append((extra_member_id, partner2_id))
+            update_member_history(
+                extra_member_id,
+                partner1_id,
+                current_time,
+                member_history,
+                current_members,
+            )
+            update_member_history(
+                partner1_id,
+                extra_member_id,
+                current_time,
+                member_history,
+                current_members,
+            )
+            update_member_history(
+                extra_member_id,
+                partner2_id,
+                current_time,
+                member_history,
+                current_members,
+            )
+            update_member_history(
+                partner2_id,
+                extra_member_id,
+                current_time,
+                member_history,
+                current_members,
+            )
+            paired_members.update([extra_member_id, partner1_id, partner2_id])
+            extra_member_paired = True
+
+    for member_id in member_ids:
+        if extra_member_paired and member_id == extra_member_id:
+            continue  # Skip StayThePath if already paired
+
         if member_id not in paired_members:
             partner_id = find_best_partner(
                 member_id, current_members, member_history, paired_members
             )
+
+            # Ensure that StayThePath doesn't get matched with the same partner twice in a row
+            if partner_id == extra_member_id:
+                partner_id = find_best_partner(
+                    member_id, current_members, member_history, paired_members
+                )
+
             if partner_id:
                 new_pairings.append((member_id, partner_id))
                 update_member_history(
@@ -138,6 +199,7 @@ async def pair_members():
                 )
                 paired_members.update([member_id, partner_id])
 
+    # Update and announce pairings
     new_pairings_with_details = []
     for member_id, partner_id in new_pairings:
         member_name = current_members[member_id]
@@ -157,6 +219,9 @@ async def pair_members():
         file.truncate()
 
     logging.info("Completed pairings.")
+
+
+# Other bot commands remain the same
 
 
 # Command to trigger pairing manually
