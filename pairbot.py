@@ -5,6 +5,8 @@ import logging
 import os
 from discord.ext import commands, tasks
 from datetime import datetime, timedelta
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.cron import CronTrigger
 
 # Set up logging
 logging.basicConfig(level=logging.DEBUG)
@@ -40,6 +42,9 @@ intents.guilds = True
 
 # Initialize the bot
 bot = commands.Bot(command_prefix="!", intents=intents)
+
+# Initialize the scheduler
+scheduler = AsyncIOScheduler()
 
 
 # Bot event when ready
@@ -88,7 +93,7 @@ def update_member_history(
 
 
 # Function to pair members
-@tasks.loop(hours=168)
+# @tasks.loop(hours=168)
 async def pair_members():
     global pairings_history
     load_data()  # Reload data every time we run the pairing
@@ -193,14 +198,23 @@ async def pair_members():
                 )
                 paired_members.update([member_id, partner_id])
 
-    # Update and announce pairings
     new_pairings_with_details = []
+
     for member_id, partner_id in new_pairings:
-        member_name = current_members[member_id]
-        partner_name = current_members[partner_id]
-        announcement = f"{member_name} is paired with {partner_name} this week!"
-        await announcement_channel.send(announcement)
-        new_pairings_with_details.append({member_name: partner_name})
+        print("member_id: ", member_id)
+        print("partner_id: ", partner_id)
+        try:
+            member = await guild.fetch_member(int(member_id))
+            partner = await guild.fetch_member(int(partner_id))
+            announcement = (
+                f"{member.mention} is paired with {partner.mention} this week!"
+            )
+            await announcement_channel.send(announcement)
+            new_pairings_with_details.append(
+                {member.display_name: partner.display_name}
+            )
+        except Exception as e:
+            logging.error(f"Error in sending pairing announcement: {e}")
 
     pairings_history[current_time] = new_pairings_with_details
 
@@ -215,18 +229,26 @@ async def pair_members():
     logging.info("Completed pairings.")
 
 
+# Add job to the scheduler
+scheduler.add_job(
+    pair_members,
+    CronTrigger(day_of_week="fri", hour=12, minute=0, timezone="America/Chicago"),
+)
+
+
+# Bot event when ready
+@bot.event
+async def on_ready():
+    logging.info(f"Logged in as {bot.user}")
+    load_data()
+    scheduler.start()  # Start the scheduler
+
+
 # Command to trigger pairing manually
 @bot.command(name="pair")
 async def pair_command(ctx):
     logging.info(f"Pair command invoked by {ctx.author}")
     await pair_members()
-
-
-# Test command
-@bot.command(name="test")
-async def test_command(ctx):
-    await ctx.send("Test command received!")
-    logging.info("Test command executed.")
 
 
 # Run the bot
